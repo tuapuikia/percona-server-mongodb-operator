@@ -3,20 +3,20 @@ kind: Service
 metadata:
   name: another-name-rs0
   ownerReferences:
-  - apiVersion: psmdb.percona.com/v1alpha1
-    controller: true
-    kind: PerconaServerMongoDB
-    name: another-name
+    - controller: true
+      kind: PerconaServerMongoDB
+      name: another-name
 spec:
-  clusterIP: None
   ports:
-  - name: mongodb
-    port: 27017
-    protocol: TCP
-    targetPort: 27017
+    - name: mongodb
+      port: 27017
+      protocol: TCP
+      targetPort: 27017
   selector:
-    app: percona-server-mongodb
-    percona-server-mongodb_cr: another-name
-    replset: rs0
+    app.kubernetes.io/instance: another-name
+    app.kubernetes.io/managed-by: percona-server-mongodb-operator
+    app.kubernetes.io/name: percona-server-mongodb
+    app.kubernetes.io/part-of: percona-server-mongodb
+    app.kubernetes.io/replset: rs0
   sessionAffinity: None
   type: ClusterIP

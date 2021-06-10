@@ -1,20 +1,22 @@
 #!/bin/bash
 
+set -o errexit
+
 test_dir="$(dirname $0)"
 . $(dirname $0)/functions
 src_dir="$(realpath $test_dir/..)"
 
-$test_dir/build
-create_namespace run-$GIT_BRANCH
+if [[ $BUILD != "0" ]]; then
+    echo "building, set BUILD=0 to suppress this"
+    "$test_dir"/build || exit
+else
+  echo "run without building"
+fi
+
+create_namespace run-$GIT_BRANCH-$RANDOM
 deploy_operator
 
 desc 'create PSMDB cluster'
-kubectl apply -f $src_dir/deploy/mongodb-users.yaml
-
-platform=(kubernetes openshift)
-cat $src_dir/deploy/cr.yaml \
-    | $sed 's/version: .*/version: "3.6"/' \
-    | $sed "s/#platform: .*/platform: ${platform[${OPENSHIFT:-0}]}/" \
-    | kubectl apply -f -
+apply_cluster $src_dir/deploy/cr.yaml
 
 wait_for_running my-cluster-name-rs0 3

@@ -1,3 +1,6 @@
+# ignore
+client-secret.json
+e2e-tests/conf/cloud-secret.yml
 
 # Temporary Build Files
 tmp/_output
@@ -50,6 +53,9 @@ flycheck_*.el
 # projectiles files
 .projectile
 projectile-bookmarks.eld
+
+#editorconfig file
+.editorconfig
 
 # directory configuration
 .dir-locals.el
@@ -107,6 +113,7 @@ tags
 
 # ignore build binary
 percona-server-mongodb-operator
+mongodb-healthcheck
 
 !cmd/percona-server-mongodb-operator
 
@@ -167,3 +174,4 @@ fabric.properties
 # Editor-based Rest Client
 .idea/httpRequests
 
+e2e-tests/init-deploy/smallrun

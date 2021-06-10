@@ -7,22 +7,30 @@ test_dir=$(realpath $(dirname $0))
 . ${test_dir}/../functions
 cluster="some-name-rs0"
 
+if version_gt "1.19"; then
+	echo "Kubernetes version is 1.19+ so skipping this test because of pumba support."
+	exit 0
+fi
 
 setup_cluster() {
-    # create first PSMDB cluster
-    kubectl apply \
+    # create cluster
+    kubectl_bin apply \
         -f $conf_dir/secrets.yml \
-        -f $conf_dir/$cluster.yml \
         -f $conf_dir/pumba.yml \
         -f $conf_dir/client.yml
+
+    apply_cluster $conf_dir/$cluster.yml
+
+    kubectl_bin patch psmdb some-name --type='merge' -p '{"spec":{"backup":{"enabled":true}}}'
 
     # check if all 3 Pods started
     wait_for_running $cluster 3
 
-    # write data, read from all
+    desc 'check data consistency: write data, read from all'
     run_mongo \
         'db.createUser({user:"myApp",pwd:"myPass",roles:[{db:"myApp",role:"readWrite"}]})' \
         "userAdmin:userAdmin123456@$cluster.$namespace"
+    sleep 2
     run_mongo \
         'use myApp\n db.test.insert({ x: 100500 })' \
         "myApp:myPass@$cluster.$namespace"
@@ -50,7 +58,7 @@ pause_pod() {
     local pod=$1
 
     # run chaos for Pod
-    kubectl exec -it "$(get_pumba)" -- /pumba -l info pause --duration 1m "re2:$pod" &
+    kubectl_bin exec -it "$(get_pumba)" -- /pumba -l info pause --duration 1m "re2:$pod" &
     pid=$!
     sleep 10
 
@@ -73,7 +81,7 @@ netem_pod() {
     local pod=$1
 
     # run chaos for Pod
-    kubectl exec -it "$(get_pumba)" -- /pumba -l info netem --tc-image 'gaiadocker/iproute2' --duration 1m loss --percent 100 --correlation 100 "re2:$pod" &
+    kubectl_bin exec -it "$(get_pumba)" -- /pumba -l info netem --tc-image 'gaiadocker/iproute2' --duration 1m loss --percent 100 --correlation 100 "re2:$pod" &
     pid=$!
     sleep 10
 
@@ -83,16 +91,33 @@ netem_pod() {
         "myApp:myPass@$cluster.$namespace"
 
     # wait for unpause
-    wait $pid
+    wait $pid || :
 
     # check if all 3 Pods started
     wait_for_running $cluster 3
-    sleep 2
 
     desc 'check data consistency for chaosed Pod'
     compare_mongo_cmd "find" "myApp:myPass@$pod.$cluster.$namespace" "-3rd"
 }
 
+recreate() {
+    # delete cluster
+    kubectl_bin delete \
+        -f $conf_dir/$cluster.yml
+    wait_for_delete pod/$cluster-2
+    wait_for_delete pod/$cluster-1
+    wait_for_delete pod/$cluster-0
+
+    # recreate cluster
+    apply_cluster $conf_dir/$cluster.yml
+
+    wait_for_running $cluster 3
+    sleep 240
+
+    compare_mongo_cmd "find" "myApp:myPass@$cluster-0.$cluster.$namespace"
+    compare_mongo_cmd "find" "myApp:myPass@$cluster-1.$cluster.$namespace"
+    compare_mongo_cmd "find" "myApp:myPass@$cluster-2.$cluster.$namespace"
+}
 
 main() {
     create_namespace $namespace
@@ -101,19 +126,22 @@ main() {
     desc 'start cluster'
     setup_cluster
 
-    desc 'kill some-name-rs0-0 pod'
+    desc 'recreate cluster'
+    recreate
+
+    desc 'kill node-0 pod'
     pumba_pod kill "$cluster-0"
 
-    desc 'rm some-name-rs0-0 pod'
+    desc 'rm node-0 pod'
     pumba_pod rm "$cluster-0"
 
-    desc 'stop some-name-rs0-0 pod'
+    desc 'stop node-0 pod'
     pumba_pod stop "$cluster-0"
 
-    desc 'pause some-name-rs0-0 pod'
+    desc 'pause node-0 pod'
     pause_pod "$cluster-0"
 
-    desc 'emulate bad network'
+    desc 'emulate bad network node-0 pod'
     netem_pod "$cluster-0"
 
     destroy $namespace

@@ -5,40 +5,29 @@ set -o xtrace
 
 test_dir="$(dirname $0)"
 . $(dirname $0)/functions
-src_dir="$(realpath $test_dir/..)"
+src_dir="$(realpath ${test_dir}/..)"
+IMAGE=$(echo "$IMAGE" | sed -e 's#percona/#perconalab/#')
 
 build_operator() {
-    repo=$(
-        git config --get remote.origin.url \
-            | sed -e 's^.*github.com[:/]^github.com/^; s/.git$//'
-    )
-    $sed -i -e 's^return "percona/percona-server-mongodb-operator:"^return "perconalab/percona-server-mongodb-operator:"^' ${src_dir}/internal/mongod/container.go
-    $sed -i -e "s/master/$GIT_BRANCH/" ${src_dir}/version/version.go
-    docker run --rm -v ${src_dir}:/go/src/${repo} golang sh -c "
-        set -o errexit
-        set -o xtrace
-        export GO_LDFLAGS='-w -s'
-        export GIT_COMMIT='$GIT_COMMIT'
-        export GIT_BRANCH='$GIT_BRANCH'
+    if [ "${RELEASE:-1}" = 0 ]; then
+        GO_LDFLAGS="-race"
+    fi
 
-        cd /go/src/${repo}
-        bash -x tmp/build/build.sh
-    "
-    $sed -i -e 's^return "perconalab/percona-server-mongodb-operator:"^return "percona/percona-server-mongodb-operator:"^' ${src_dir}/internal/mongod/container.go
-    $sed -i -e "s/$GIT_BRANCH/master/" ${src_dir}/version/version.go
     export IMAGE
+    export GO_LDFLAGS="-w -s -trimpath $GO_LDFLAGS"
     pushd ${src_dir}
-        bash -x ${src_dir}/tmp/build/docker_build.sh
+        docker build \
+            --build-arg GIT_COMMIT=$GIT_COMMIT \
+            --build-arg GIT_BRANCH=$GIT_BRANCH \
+            --build-arg GO_LDFLAGS="$GO_LDFLAGS" \
+            --squash \
+            --no-cache \
+            -t "${IMAGE}" -f build/Dockerfile .
     popd
     docker push ${IMAGE}
 }
 
-build_mongod36() {
-    pushd ${src_dir}
-        docker build --no-cache --squash -t ${IMAGE_MONGOD36} -f tmp/build/Dockerfile.mongod36 .
-    popd
-    docker push ${IMAGE_MONGOD36}
-}
-
+until docker ps;
+    do sleep 1;
+done
 build_operator
-build_mongod36
